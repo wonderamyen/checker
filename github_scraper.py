@@ -27,21 +27,70 @@ TG_CHAT_ID   = os.getenv("TG_CHAT_ID", "YOUR_TELEGRAM_CHAT_ID_PLACEHOLDER")
 
 
 def send_telegram(links):
-    """Send a batch of profile links to Telegram."""
+    """Send profile links to Telegram in batches to respect the 4096 character limit."""
     if not links:
         return
+    
     # Only send if token and chat_id are provided (i.e., not default placeholders)
     if TG_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_PLACEHOLDER" or TG_CHAT_ID == "YOUR_TELEGRAM_CHAT_ID_PLACEHOLDER":
         print("Telegram token or chat ID not configured. Skipping Telegram notification.")
         return
 
-    message = "\n".join(links)
-    url     = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": TG_CHAT_ID, "text": message})
-        print(f"Sent {len(links)} link(s) to Telegram.")
-    except Exception as e:
-        print(f"Telegram error: {e}")
+    # Calculate max links per batch (each link is ~38 characters)
+    # "https://steamcommunity.com/profiles/76561199258852510" = ~38 chars
+    # We'll use a conservative estimate of 40 chars per link + newline
+    MAX_CHARS = 4096
+    CHARS_PER_LINK = 40  # conservative estimate
+    MAX_LINKS_PER_BATCH = MAX_CHARS // CHARS_PER_LINK
+    
+    # Alternatively, you can set a fixed number of links per batch
+    # MAX_LINKS_PER_BATCH = 40  # Uncomment this line to use a fixed number
+    
+    total_batches = (len(links) + MAX_LINKS_PER_BATCH - 1) // MAX_LINKS_PER_BATCH
+    
+    for batch_num in range(total_batches):
+        start_idx = batch_num * MAX_LINKS_PER_BATCH
+        end_idx = min(start_idx + MAX_LINKS_PER_BATCH, len(links))
+        batch_links = links[start_idx:end_idx]
+        
+        message = "\n".join(batch_links)
+        
+        # Double-check we're within the limit
+        if len(message) > MAX_CHARS:
+            # If still too long, split by character count instead of link count
+            # This is a safety fallback
+            messages = []
+            current_msg = ""
+            for link in batch_links:
+                if len(current_msg) + len(link) + 1 > MAX_CHARS:  # +1 for newline
+                    messages.append(current_msg)
+                    current_msg = link
+                else:
+                    if current_msg:
+                        current_msg += "\n" + link
+                    else:
+                        current_msg = link
+            if current_msg:
+                messages.append(current_msg)
+            
+            # Send each message chunk
+            for msg in messages:
+                try:
+                    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+                    requests.post(url, json={"chat_id": TG_CHAT_ID, "text": msg})
+                    print(f"Sent {len(msg.split(chr(10)))} links in chunk.")
+                    time.sleep(0.5)  # Small delay between messages to avoid rate limits
+                except Exception as e:
+                    print(f"Telegram error: {e}")
+        else:
+            # Send the batch normally
+            try:
+                url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+                requests.post(url, json={"chat_id": TG_CHAT_ID, "text": message})
+                print(f"Sent batch {batch_num + 1}/{total_batches} ({len(batch_links)} links).")
+                time.sleep(0.5)  # Small delay between messages to avoid rate limits
+            except Exception as e:
+                print(f"Telegram error: {e}")
 
 
 def get_inventory(steamid64):
