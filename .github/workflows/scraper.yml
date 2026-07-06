@@ -11,7 +11,7 @@ on:
         description: 'Maximum number of accounts to scrape'
         required: true
         default: '50'
-        type: number
+        type: string
 
 jobs:
   scrape:
